@@ -1,0 +1,19 @@
+========================================
+  ENCUESTA DE PERFILES TÉCNICOS
+  Cómo ejecutar en otra PC
+========================================
+
+REQUISITO: Node.js 18 o superior (https://nodejs.org/)
+
+1. Copiar toda la carpeta del proyecto al otro PC.
+
+2. Abrir terminal en esa carpeta (donde están "backend" y "frontend").
+
+3. Primera vez:  npm run setup
+
+4. Iniciar:  npm run dev
+
+5. Abrir navegador: http://localhost:3000
+   Admin: cédula 00000000, contraseña admin123
+
+Si falla npm en PowerShell, usar cmd o: npm.cmd run setup  y  npm.cmd run dev

@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// SQLite no soporta enums; usamos String (en PostgreSQL se pueden usar enums)
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  cedula       String   @unique
+  passwordHash String
+  role         String   @default("USER") // USER | ADMIN
+  createdAt    DateTime @default(now())
+  surveys      Survey[]
+}
+
+model Question {
+  id        Int     @id @default(autoincrement())
+  text      String
+  profile  String  // A | B | C | D (Ideador, Clarificador, Desarrollador, Implementador)
+  order     Int
+  isExample Boolean @default(false)
+  active    Boolean @default(true)
+  answers   Answer[]
+}
+
+model Survey {
+  id            Int       @id @default(autoincrement())
+  user          User      @relation(fields: [userId], references: [id])
+  userId        Int
+  createdAt     DateTime  @default(now())
+  answers       Answer[]
+  totalProfileA Int       @default(0)
+  totalProfileB Int       @default(0)
+  totalProfileC Int       @default(0)
+  totalProfileD Int       @default(0)
+}
+
+model Answer {
+  id         Int      @id @default(autoincrement())
+  survey     Survey   @relation(fields: [surveyId], references: [id])
+  surveyId   Int
+  question   Question @relation(fields: [questionId], references: [id])
+  questionId Int
+  rawScore   Int
+  points     Int
+}
+
