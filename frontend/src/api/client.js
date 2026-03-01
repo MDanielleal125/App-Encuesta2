@@ -68,5 +68,9 @@ export const api = {
         return r.json();
       });
     },
+    createQuestion: (data) => api.post('/admin/questions', data),
+    deleteQuestion: (id) => request(`/admin/questions/${id}`, { method: 'DELETE' }),
+    updateQuestion: (id, data) => request(`/admin/questions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   },
+  
 };

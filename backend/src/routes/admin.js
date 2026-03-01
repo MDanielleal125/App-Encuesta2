@@ -311,6 +311,62 @@ router.get('/results/export', async (req, res) => {
     return res.status(500).json({ message: 'Error exportando resultados' });
   }
 });
+// Crear pregunta manualmente
+router.post('/questions', async (req, res) => {
+  try {
+    const { text, profile, order, isExample, active } = req.body;
+    if (!text || !profile) {
+      return res.status(400).json({ message: 'text y profile son obligatorios' });
+    }
+    const validProfile = ['A', 'B', 'C', 'D'].includes(profile.toUpperCase()) ? profile.toUpperCase() : 'A';
+    const question = await prisma.question.create({
+      data: {
+        text: text.trim(),
+        profile: validProfile,
+        order: order ? Number(order) : 999,
+        isExample: isExample === true || isExample === 'true',
+        active: active === false || active === 'false' ? false : true,
+      },
+    });
+    return res.json(question);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Error creando pregunta' });
+  }
+});
 
+// Eliminar pregunta
+router.delete('/questions/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    await prisma.answer.deleteMany({ where: { questionId: id } });
+    await prisma.question.delete({ where: { id } });
+    return res.json({ message: 'Pregunta eliminada' });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Error eliminando pregunta' });
+  }
+});
+// Editar pregunta
+router.put('/questions/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { text, profile, order, isExample, active } = req.body;
+    const updated = await prisma.question.update({
+      where: { id },
+      data: {
+        ...(text !== undefined && { text: text.trim() }),
+        ...(profile !== undefined && { profile: profile.toUpperCase() }),
+        ...(order !== undefined && { order: Number(order) }),
+        ...(isExample !== undefined && { isExample: isExample === true || isExample === 'true' }),
+        ...(active !== undefined && { active: active === true || active === 'true' }),
+      },
+    });
+    return res.json(updated);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Error editando pregunta' });
+  }
+});
 module.exports = router;
 
