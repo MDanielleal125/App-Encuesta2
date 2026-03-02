@@ -6,6 +6,7 @@ import Survey from './pages/Survey';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import ImportExport from './pages/admin/ImportExport';
+import Respondents from './pages/admin/Respondents';
 
 function ProtectedRoute({ children, adminOnly }) {
   const { user, loading } = useAuth();
@@ -67,6 +68,7 @@ export default function App() {
         }
       >
         <Route index element={<AdminDashboard />} />
+        <Route path="respondents" element={<Respondents />} />
         <Route path="import-export" element={<ImportExport />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -368,5 +368,68 @@ router.put('/questions/:id', async (req, res) => {
     return res.status(500).json({ message: 'Error editando pregunta' });
   }
 });
+// Listado paginado de respondientes (encuestas) con búsqueda y orden por perfil
+router.get('/respondents', async (req, res) => {
+  try {
+    const search = (req.query.search || '').trim();
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const pageSize = Math.min(Math.max(Number(req.query.pageSize) || 50, 1), 500);
+
+    const role = (req.query.role || '').toUpperCase(); // A|B|C|D
+    const order = (req.query.order || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+    const roleFieldMap = { A: 'totalProfileA', B: 'totalProfileB', C: 'totalProfileC', D: 'totalProfileD' };
+    const sortField = roleFieldMap[role] || 'createdAt';
+
+    // date filtering
+    let startDate = req.query.startDate ? new Date(req.query.startDate) : null;
+    let endDate = req.query.endDate ? new Date(req.query.endDate) : null;
+    if (startDate && isNaN(startDate.getTime())) startDate = null;
+    if (endDate && isNaN(endDate.getTime())) endDate = null;
+
+    const where = {};
+    if (search) {
+      where.user = {
+        OR: [
+          { name: { contains: search, mode: 'insensitive' } },
+          { cedula: { contains: search, mode: 'insensitive' } },
+        ],
+      };
+    }
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = startDate;
+      if (endDate) {
+        // include entire day by setting time to end of day if only date string provided
+        const e = new Date(endDate);
+        e.setHours(23, 59, 59, 999);
+        where.createdAt.lte = e;
+      }
+    }
+
+    const total = await prisma.survey.count({ where });
+    const surveys = await prisma.survey.findMany({
+      where,
+      include: { user: { select: { id: true, name: true, cedula: true } } },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      orderBy: { [sortField]: order },
+    });
+
+    const items = surveys.map((s) => ({
+      surveyId: s.id,
+      createdAt: s.createdAt,
+      user: s.user,
+      totalProfileA: s.totalProfileA,
+      totalProfileB: s.totalProfileB,
+      totalProfileC: s.totalProfileC,
+      totalProfileD: s.totalProfileD,
+    }));
+
+    return res.json({ items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Error obteniendo respondientes' });
+  }
+});
 module.exports = router;
 

@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 
 const navItems = [
   { to: '/admin', end: true, label: 'Dashboard' },
+  { to: '/admin/respondents', end: false, label: 'Respondientes' },
   { to: '/admin/import-export', end: false, label: 'Importar / Exportar' },
 ];
 
