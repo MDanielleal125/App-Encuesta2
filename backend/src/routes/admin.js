@@ -10,7 +10,12 @@ router.use(authenticateToken, requireAdmin);
 
 router.get('/surveys', async (req, res) => {
   try {
-    const surveys = await prisma.survey.findMany({
+    // opcional límite de registros (para la tabla del dashboard)
+    let limit = Number(req.query.limit) || 0;
+    if (limit < 0) limit = 0;
+    if (limit > 1000) limit = 1000;
+
+    const queryOptions = {
       orderBy: { createdAt: 'desc' },
       include: {
         user: {
@@ -21,7 +26,10 @@ router.get('/surveys', async (req, res) => {
           },
         },
       },
-    });
+    };
+    if (limit > 0) queryOptions.take = limit;
+
+    const surveys = await prisma.survey.findMany(queryOptions);
 
     const mapped = surveys.map((s) => ({
       id: s.id,
@@ -72,27 +80,51 @@ router.get('/surveys/:id', async (req, res) => {
 
 router.get('/summary', async (req, res) => {
   try {
-    const aggregate = await prisma.survey.aggregate({
-      _sum: {
+    // recabar todos los totales para calcular conteos y sumas
+    const surveys = await prisma.survey.findMany({
+      select: {
         totalProfileA: true,
         totalProfileB: true,
         totalProfileC: true,
         totalProfileD: true,
       },
-      _count: {
-        id: true,
-      },
     });
 
-    return res.json({
-      totalSurveys: aggregate._count.id,
-      profiles: {
-        A: aggregate._sum.totalProfileA || 0,
-        B: aggregate._sum.totalProfileB || 0,
-        C: aggregate._sum.totalProfileC || 0,
-        D: aggregate._sum.totalProfileD || 0,
-      },
+    const profileCounts = { A: 0, B: 0, C: 0, D: 0 };
+    const pointSums     = { A: 0, B: 0, C: 0, D: 0 };
+
+    surveys.forEach((s) => {
+      // acumular puntos
+      pointSums.A += s.totalProfileA;
+      pointSums.B += s.totalProfileB;
+      pointSums.C += s.totalProfileC;
+      pointSums.D += s.totalProfileD;
+
+      // determinar perfil dominante por encuesta
+      const totals = {
+        A: s.totalProfileA,
+        B: s.totalProfileB,
+        C: s.totalProfileC,
+        D: s.totalProfileD,
+      };
+      let maxP = 'A';
+      let maxV = totals.A;
+      Object.entries(totals).forEach(([p, v]) => {
+        if (v > maxV) {
+          maxV = v;
+          maxP = p;
+        }
+      });
+      profileCounts[maxP]++;
     });
+
+    const summary = {
+      totalSurveys: surveys.length,
+      profiles: profileCounts,    // cantidad de encuestas/personas por perfil dominante
+      points: pointSums,          // suma de puntos de cada perfil (para promedios)
+    };
+
+    return res.json(summary);
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: 'Error obteniendo resumen' });
@@ -380,31 +412,16 @@ router.get('/respondents', async (req, res) => {
     const roleFieldMap = { A: 'totalProfileA', B: 'totalProfileB', C: 'totalProfileC', D: 'totalProfileD' };
     const sortField = roleFieldMap[role] || 'createdAt';
 
-    // date filtering
-    let startDate = req.query.startDate ? new Date(req.query.startDate) : null;
-    let endDate = req.query.endDate ? new Date(req.query.endDate) : null;
-    if (startDate && isNaN(startDate.getTime())) startDate = null;
-    if (endDate && isNaN(endDate.getTime())) endDate = null;
-
-    const where = {};
-    if (search) {
-      where.user = {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { cedula: { contains: search, mode: 'insensitive' } },
-        ],
-      };
-    }
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = startDate;
-      if (endDate) {
-        // include entire day by setting time to end of day if only date string provided
-        const e = new Date(endDate);
-        e.setHours(23, 59, 59, 999);
-        where.createdAt.lte = e;
-      }
-    }
+    const where = search
+      ? {
+          user: {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { cedula: { contains: search, mode: 'insensitive' } },
+            ],
+          },
+        }
+      : {};
 
     const total = await prisma.survey.count({ where });
     const surveys = await prisma.survey.findMany({
