@@ -39,7 +39,10 @@ export const api = {
   },
 
   admin: {
-    surveys: () => api.get('/admin/surveys'),
+    surveys: (limit) => {
+      const path = limit ? `/admin/surveys?limit=${limit}` : '/admin/surveys';
+      return api.get(path);
+    },
     survey: (id) => api.get(`/admin/surveys/${id}`),
     summary: () => api.get('/admin/summary'),
     questions: () => api.get('/admin/questions'),
@@ -68,5 +71,9 @@ export const api = {
         return r.json();
       });
     },
+    createQuestion: (data) => api.post('/admin/questions', data),
+    deleteQuestion: (id) => request(`/admin/questions/${id}`, { method: 'DELETE' }),
+    updateQuestion: (id, data) => request(`/admin/questions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   },
+  
 };

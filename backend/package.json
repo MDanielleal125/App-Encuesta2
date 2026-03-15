@@ -8,7 +8,8 @@
     "start": "node src/server.js",
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
-    "prisma:seed": "node prisma/seed.js"
+    "prisma:seed": "node prisma/seed.js",
+    "prisma:seed-dummy": "node prisma/seedDummy.js"
   },
   "keywords": [],
   "author": "",

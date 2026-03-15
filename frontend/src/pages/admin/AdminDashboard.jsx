@@ -42,7 +42,9 @@ export default function AdminDashboard() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    Promise.all([api.admin.surveys(), api.admin.summary()])
+    setLoading(true);
+    // trae solo las últimas 10 encuestas para la tabla
+    Promise.all([api.admin.surveys(10), api.admin.summary()])
       .then(([surveysData, summaryData]) => {
         setSurveys(surveysData);
         setSummary(summaryData);
@@ -72,7 +74,7 @@ export default function AdminDashboard() {
         labels: Object.keys(PROFILE_NAMES).map((k) => PROFILE_NAMES[k]),
         datasets: [
           {
-            label: 'Puntos acumulados (todas las encuestas)',
+            label: 'Cantidad de encuestas por perfil',
             data: [
               summary.profiles.A,
               summary.profiles.B,
@@ -95,7 +97,7 @@ export default function AdminDashboard() {
         labels: Object.keys(PROFILE_NAMES).map((k) => PROFILE_NAMES[k]),
         datasets: [
           {
-            label: 'Totales por perfil',
+            label: 'Cantidad de encuestas por perfil',
             data: [
               summary.profiles.A,
               summary.profiles.B,
@@ -130,22 +132,26 @@ export default function AdminDashboard() {
   const totalSurveys = summary?.totalSurveys ?? 0;
   const profileKeys = ['A', 'B', 'C', 'D'];
 
-  const averages = totalSurveys > 0 && summary
+  // promedio de puntos por encuesta, usa datos devueltos en summary.points
+  const averages =
+    totalSurveys > 0 && summary
+      ? {
+          A: Math.round((summary.points.A / totalSurveys) * 10) / 10,
+          B: Math.round((summary.points.B / totalSurveys) * 10) / 10,
+          C: Math.round((summary.points.C / totalSurveys) * 10) / 10,
+          D: Math.round((summary.points.D / totalSurveys) * 10) / 10,
+        }
+      : { A: 0, B: 0, C: 0, D: 0 };
+
+  // ya no iteramos sobre surveys; cogemos el conteo directamente de summary.profiles
+  const dominantCount = summary
     ? {
-        A: Math.round((summary.profiles.A / totalSurveys) * 10) / 10,
-        B: Math.round((summary.profiles.B / totalSurveys) * 10) / 10,
-        C: Math.round((summary.profiles.C / totalSurveys) * 10) / 10,
-        D: Math.round((summary.profiles.D / totalSurveys) * 10) / 10,
+        A: summary.profiles.A,
+        B: summary.profiles.B,
+        C: summary.profiles.C,
+        D: summary.profiles.D,
       }
     : { A: 0, B: 0, C: 0, D: 0 };
-
-  const dominantCount = { A: 0, B: 0, C: 0, D: 0 };
-  surveys.forEach((s) => {
-    const t = s.totals || {};
-    const max = Math.max(t.A ?? 0, t.B ?? 0, t.C ?? 0, t.D ?? 0);
-    const key = profileKeys.find((k) => (t[k] ?? 0) === max);
-    if (key) dominantCount[key]++;
-  });
 
   const dominantPercent =
     totalSurveys > 0
@@ -173,21 +179,6 @@ export default function AdminDashboard() {
     ],
   };
 
-  const countChartData = {
-    labels: profileKeys.map((k) => PROFILE_NAMES[k]),
-    datasets: [
-      {
-        label: 'Cantidad de personas',
-        data: [dominantCount.A, dominantCount.B, dominantCount.C, dominantCount.D],
-        backgroundColor: [
-          'rgba(59, 130, 246, 0.7)',
-          'rgba(34, 197, 94, 0.7)',
-          'rgba(234, 179, 8, 0.7)',
-          'rgba(239, 68, 68, 0.7)',
-        ],
-      },
-    ],
-  };
 
   const percentChartData = {
     labels: profileKeys.map((k) => PROFILE_NAMES[k]),
@@ -218,13 +209,13 @@ export default function AdminDashboard() {
       <div className="grid md:grid-cols-2 gap-6">
         {barData && (
           <div className="bg-white rounded-xl shadow p-6">
-            <h3 className="font-semibold text-slate-800 mb-4">Perfiles acumulados (barras)</h3>
+            <h3 className="font-semibold text-slate-800 mb-4">Cantidad de encuestas por perfil (barras)</h3>
             <Bar data={barData} options={barOptions} />
           </div>
         )}
         {radarData && (
           <div className="bg-white rounded-xl shadow p-6">
-            <h3 className="font-semibold text-slate-800 mb-4">Comparativa por perfil (radar)</h3>
+            <h3 className="font-semibold text-slate-800 mb-4">Cantidad de encuestas por perfil (radar)</h3>
             <Radar data={radarData} options={radarOptions} />
           </div>
         )}
@@ -261,20 +252,6 @@ export default function AdminDashboard() {
                   maintainAspectRatio: false,
                   plugins: { legend: { position: 'bottom' } },
                 }}
-              />
-            </div>
-          ) : (
-            <p className="text-slate-400 text-sm py-8 text-center">Sin encuestas aún</p>
-          )}
-        </div>
-        <div className="bg-white rounded-xl shadow p-6">
-          <h3 className="font-semibold text-slate-800 mb-4">Cantidad de personas por perfil</h3>
-          <p className="text-slate-500 text-sm mb-2">Nº de personas con cada perfil dominante</p>
-          {totalSurveys > 0 ? (
-            <div className="h-64">
-              <Bar
-                data={countChartData}
-                options={{ ...barOptions, plugins: { legend: { display: false } }, maintainAspectRatio: false }}
               />
             </div>
           ) : (

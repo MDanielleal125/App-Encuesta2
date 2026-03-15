@@ -10,7 +10,12 @@ router.use(authenticateToken, requireAdmin);
 
 router.get('/surveys', async (req, res) => {
   try {
-    const surveys = await prisma.survey.findMany({
+    // opcional límite de registros (para la tabla del dashboard)
+    let limit = Number(req.query.limit) || 0;
+    if (limit < 0) limit = 0;
+    if (limit > 1000) limit = 1000;
+
+    const queryOptions = {
       orderBy: { createdAt: 'desc' },
       include: {
         user: {
@@ -21,7 +26,10 @@ router.get('/surveys', async (req, res) => {
           },
         },
       },
-    });
+    };
+    if (limit > 0) queryOptions.take = limit;
+
+    const surveys = await prisma.survey.findMany(queryOptions);
 
     const mapped = surveys.map((s) => ({
       id: s.id,
@@ -72,27 +80,51 @@ router.get('/surveys/:id', async (req, res) => {
 
 router.get('/summary', async (req, res) => {
   try {
-    const aggregate = await prisma.survey.aggregate({
-      _sum: {
+    // recabar todos los totales para calcular conteos y sumas
+    const surveys = await prisma.survey.findMany({
+      select: {
         totalProfileA: true,
         totalProfileB: true,
         totalProfileC: true,
         totalProfileD: true,
       },
-      _count: {
-        id: true,
-      },
     });
 
-    return res.json({
-      totalSurveys: aggregate._count.id,
-      profiles: {
-        A: aggregate._sum.totalProfileA || 0,
-        B: aggregate._sum.totalProfileB || 0,
-        C: aggregate._sum.totalProfileC || 0,
-        D: aggregate._sum.totalProfileD || 0,
-      },
+    const profileCounts = { A: 0, B: 0, C: 0, D: 0 };
+    const pointSums     = { A: 0, B: 0, C: 0, D: 0 };
+
+    surveys.forEach((s) => {
+      // acumular puntos
+      pointSums.A += s.totalProfileA;
+      pointSums.B += s.totalProfileB;
+      pointSums.C += s.totalProfileC;
+      pointSums.D += s.totalProfileD;
+
+      // determinar perfil dominante por encuesta
+      const totals = {
+        A: s.totalProfileA,
+        B: s.totalProfileB,
+        C: s.totalProfileC,
+        D: s.totalProfileD,
+      };
+      let maxP = 'A';
+      let maxV = totals.A;
+      Object.entries(totals).forEach(([p, v]) => {
+        if (v > maxV) {
+          maxV = v;
+          maxP = p;
+        }
+      });
+      profileCounts[maxP]++;
     });
+
+    const summary = {
+      totalSurveys: surveys.length,
+      profiles: profileCounts,    // cantidad de encuestas/personas por perfil dominante
+      points: pointSums,          // suma de puntos de cada perfil (para promedios)
+    };
+
+    return res.json(summary);
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: 'Error obteniendo resumen' });
@@ -311,6 +343,110 @@ router.get('/results/export', async (req, res) => {
     return res.status(500).json({ message: 'Error exportando resultados' });
   }
 });
+// Crear pregunta manualmente
+router.post('/questions', async (req, res) => {
+  try {
+    const { text, profile, order, isExample, active } = req.body;
+    if (!text || !profile) {
+      return res.status(400).json({ message: 'text y profile son obligatorios' });
+    }
+    const validProfile = ['A', 'B', 'C', 'D'].includes(profile.toUpperCase()) ? profile.toUpperCase() : 'A';
+    const question = await prisma.question.create({
+      data: {
+        text: text.trim(),
+        profile: validProfile,
+        order: order ? Number(order) : 999,
+        isExample: isExample === true || isExample === 'true',
+        active: active === false || active === 'false' ? false : true,
+      },
+    });
+    return res.json(question);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Error creando pregunta' });
+  }
+});
 
+// Eliminar pregunta
+router.delete('/questions/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    await prisma.answer.deleteMany({ where: { questionId: id } });
+    await prisma.question.delete({ where: { id } });
+    return res.json({ message: 'Pregunta eliminada' });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Error eliminando pregunta' });
+  }
+});
+// Editar pregunta
+router.put('/questions/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { text, profile, order, isExample, active } = req.body;
+    const updated = await prisma.question.update({
+      where: { id },
+      data: {
+        ...(text !== undefined && { text: text.trim() }),
+        ...(profile !== undefined && { profile: profile.toUpperCase() }),
+        ...(order !== undefined && { order: Number(order) }),
+        ...(isExample !== undefined && { isExample: isExample === true || isExample === 'true' }),
+        ...(active !== undefined && { active: active === true || active === 'true' }),
+      },
+    });
+    return res.json(updated);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Error editando pregunta' });
+  }
+});
+// Listado paginado de respondientes (encuestas) con búsqueda y orden por perfil
+router.get('/respondents', async (req, res) => {
+  try {
+    const search = (req.query.search || '').trim();
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const pageSize = Math.min(Math.max(Number(req.query.pageSize) || 50, 1), 500);
+
+    const role = (req.query.role || '').toUpperCase(); // A|B|C|D
+    const order = (req.query.order || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+    const roleFieldMap = { A: 'totalProfileA', B: 'totalProfileB', C: 'totalProfileC', D: 'totalProfileD' };
+    const sortField = roleFieldMap[role] || 'createdAt';
+
+    const where = search
+      ? {
+          user: {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { cedula: { contains: search, mode: 'insensitive' } },
+            ],
+          },
+        }
+      : {};
+
+    const total = await prisma.survey.count({ where });
+    const surveys = await prisma.survey.findMany({
+      where,
+      include: { user: { select: { id: true, name: true, cedula: true } } },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      orderBy: { [sortField]: order },
+    });
+
+    const items = surveys.map((s) => ({
+      surveyId: s.id,
+      createdAt: s.createdAt,
+      user: s.user,
+      totalProfileA: s.totalProfileA,
+      totalProfileB: s.totalProfileB,
+      totalProfileC: s.totalProfileC,
+      totalProfileD: s.totalProfileD,
+    }));
+
+    return res.json({ items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Error obteniendo respondientes' });
+  }
+});
 module.exports = router;
 
